@@ -1,0 +1,380 @@
+-- vitals --
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
+
+local colors = {
+	SchemeColor = Color3.fromRGB(46, 48, 43),
+	Background = Color3.fromRGB(13, 15, 12),
+	Header = Color3.fromRGB(36, 38, 35),
+	TextColor = Color3.fromRGB(152, 99, 53),
+	ElementColor = Color3.fromRGB(24, 24, 24)
+}
+
+local Window = Library.CreateLib("Aimlock Personal Script", colors)
+
+-- tabs --
+local AimlockTab = Window:NewTab("Aimlock")
+local OtherScriptsTab = Window:NewTab("Other Scripts")
+local SettingsTab = Window:NewTab("UI Settings")
+
+-- sections --
+local AimlockSection = AimlockTab:NewSection("Aimlock")
+local AimlockWhitelistSection = AimlockTab:NewSection("Aimlock Whitelist")
+local TeamAimlockWhitelistSection = AimlockTab:NewSection("Team Whitelist")
+
+local OtherScriptsSection = OtherScriptsTab:NewSection("Other Scripts")
+
+local SettingsSection = SettingsTab:NewSection("UI Settings")
+local ColourSettingsSection = SettingsTab:NewSection("Colour Settings")
+
+-- variables --
+local player = game.Players.LocalPlayer
+
+-- functions --
+local function notify(title:string, text:string, duration:number, button1:string?, button2:string?)
+	if button1 then
+		if not button2 then
+			game:GetService("StarterGui"):SetCore("SendNotification", {
+				Title = title,
+				Text = text,
+				Duration = duration,
+				Button1 = button1
+			})
+		else
+			game:GetService("StarterGui"):SetCore("SendNotification", {
+				Title = title,
+				Text = text,
+				Duration = duration,
+				Button1 = button1,
+				Button2 = button2
+			})
+		end
+	else
+		game:GetService("StarterGui"):SetCore("SendNotification", {
+			Title = title,
+			Text = text,
+			Duration = duration
+		})
+	end
+end
+
+local function isAlive()
+	local character = player.Character
+
+	if character then
+		local humanoid = character:FindFirstChildWhichIsA("Humanoid")
+
+		if humanoid then
+			if humanoid.Health > 0 then
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
+-- options --
+SettingsSection:NewKeybind("Toggle UI Keybind", "Default key is RightShift", Enum.KeyCode.RightShift, function()
+	Library:ToggleUI()
+end)
+
+OtherScriptsSection:NewButton("Infinite Yield", "discord.gg/infiniteyield", function()
+	loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))()
+end)
+-- aimlock subsection start
+
+-- settings
+local whitelisted = {}
+local whitelistedTeams = {}
+
+--
+local locking = false
+local LocalPlayer:Player = game:GetService("Players").LocalPlayer	
+local cam:Camera = game:GetService("Workspace").CurrentCamera
+local target:Player = game:GetService("Players")
+
+local function isWallBlocking(player1, player2)
+	local player1Char:Model = player1.Character
+	local player2Char:Model = player2.Character
+
+	if not player1Char or not player2Char then
+		return false
+	end
+
+	local player1Pos = player1Char:FindFirstChild("HumanoidRootPart") and player1Char.HumanoidRootPart.Position
+	local player2Pos = player2Char:FindFirstChild("HumanoidRootPart") and player2Char.HumanoidRootPart.Position
+
+	if not player1Pos or not player2Pos then
+		return false
+	end
+
+	local ray = Ray.new(player1Pos, (player2Pos - player1Pos).unit * (player2Pos - player1Pos).magnitude)
+	local hitPart, hitPosition = workspace:FindPartOnRay(ray, player1Char)
+
+	if hitPart then
+		if hitPart:IsA("BasePart") and not player1Char:IsAncestorOf(hitPart) and not player2Char:IsAncestorOf(hitPart) then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function isPartInView(part)
+	local camera = workspace.CurrentCamera
+	local partPosition = part.Position
+	local screenPoint, onScreen = camera:WorldToScreenPoint(partPosition)
+
+	if onScreen then
+		local screenWidth, screenHeight = camera.ViewportSize.X, camera.ViewportSize.Y
+		local screenX, screenY = screenPoint.X, screenPoint.Y
+
+		if screenX >= 0 and screenX <= screenWidth and screenY >= 0 and screenY <= screenHeight then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function isPlayerWhitelisted(player)
+	for _, whitelistedPlayer in ipairs(whitelisted) do
+		if player.Name == whitelistedPlayer then
+			return true
+		end
+	end
+	return false
+end
+
+local function findNearestPlayer()
+	local closestPlayer = nil
+	local shortestDistance = math.huge
+	local localPlayerPosition = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart").Position
+	local camera = game.Workspace.CurrentCamera
+
+	if not localPlayerPosition then
+		return nil
+	end
+
+	for _, player in pairs(game:GetService("Players"):GetPlayers()) do
+		if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") and not isPlayerWhitelisted(player) then
+			if player.Team and table.find(whitelistedTeams, player.Team) then
+				return
+			end
+			
+			local playerPosition = player.Character.Head.Position
+			local distance = (localPlayerPosition - playerPosition).magnitude
+
+			local screenPoint, onScreen = camera:WorldToScreenPoint(playerPosition)
+			if onScreen then
+				if not isWallBlocking(LocalPlayer, player) then
+					if distance < shortestDistance then
+						if player.Character.Humanoid.Health > 0 then
+							if game.PlaceId == 8343259840 or game.PlaceId == 15169303036 then -- PREVENTS LOCKING ON DOWNED IN CRIMINALITY
+								if not game:GetService("ReplicatedStorage"):WaitForChild("CharStats"):WaitForChild(player.Name):WaitForChild("Downed").Value then
+									shortestDistance = distance
+									closestPlayer = player
+								end
+							else
+								shortestDistance = distance
+								closestPlayer = player
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	return closestPlayer
+end
+
+local function lookAtPart(part:Part)
+	local playerCharacter = LocalPlayer.Character or LocalPlayer.CharacterAdded
+
+	LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+	cam.CFrame = CFrame.new(playerCharacter:WaitForChild("Head").Position, part.Position)
+end
+
+local function getFriendsInServer(player:Player)
+	local friendsInServer = {}
+
+	for _, otherPlayer in pairs(game.Players:GetPlayers()) do
+		if player:IsFriendsWith(otherPlayer.UserId) then
+			table.insert(friendsInServer, otherPlayer)
+		end
+	end
+
+	return friendsInServer
+end
+
+local function getTeams()
+	local existingTeams = game:GetService("Teams"):GetTeams()
+	local teamNames = {}
+	
+	for _, team in ipairs(existingTeams) do
+		table.insert(teamNames, team.Name)
+	end
+	
+	return teamNames
+end
+
+local function joinInstanceNames(t)
+	local names = {}
+
+	for _, instance in pairs(t) do
+		table.insert(names, instance.Name)
+	end
+
+	return table.concat(names, ", ")
+end
+
+local function joinPlayerNames(players)
+	local names = {}
+
+	for _, player in pairs(players) do
+		table.insert(names, player.Name)
+	end
+
+	return table.concat(names, ", ")
+end
+
+local function getAllPlayerNames()
+	local playerNames = {}
+
+	for _, player in pairs(game.Players:GetPlayers()) do
+		table.insert(playerNames, player.Name)
+	end
+
+	return playerNames
+end
+
+local function tableToString(t)
+	return table.concat(t, ", ")
+end
+
+local function whitelistPlayer(playerName:string, notifyOfWhitelist:boolean?)
+	if not table.find(whitelisted, playerName) then
+		table.insert(whitelisted, playerName)
+
+		if notifyOfWhitelist then
+			notify("Whitelisted", playerName .. " has been whitelisted", 3)
+		end
+	else
+		if notifyOfWhitelist then
+			notify("Already Whitelisted", playerName .. " is already whitelisted", 2)
+		end
+	end
+end
+
+local function whitelistTeam(team:Team, notifyOfWhitelist:boolean?)
+	if not table.find(whitelistedTeams, team) then
+		table.insert(whitelistedTeams, team)
+
+		if notifyOfWhitelist then
+			notify("Whitelisted", team.Name .. " team members has been whitelisted", 3)
+		end
+	else
+		if notifyOfWhitelist then
+			notify("Already Whitelisted", team.Name .. " is already a whitelisted team", 2)
+		end
+	end
+end
+
+game:GetService("UserInputService").InputBegan:Connect(function(input, typing)
+	if not typing then
+		if input.UserInputType == Enum.UserInputType.MouseButton2 then
+			locking = true
+
+			while locking do
+				if aimlockEnabled then
+					local nearestPlayer:Player? = findNearestPlayer()
+
+					if nearestPlayer then
+						local nearestCharacter = nearestPlayer.Character or nearestPlayer.CharacterAdded
+						local nearestCharactersHead = nearestCharacter:WaitForChild("Head")
+
+						if isPartInView(nearestCharactersHead) then
+							lookAtPart(nearestCharactersHead)
+						end
+					end
+				end
+
+				task.wait()
+			end
+		end
+	end
+end)
+
+game:GetService("UserInputService").InputEnded:Connect(function(input, typing)
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		LocalPlayer.CameraMode = Enum.CameraMode.Classic
+		locking = false
+	end
+end)
+
+AimlockSection:NewToggle("Aimlock", "Toggles aimlock", function(state)
+	aimlockEnabled = state
+end)
+
+local whitelistDropdown = AimlockWhitelistSection:NewDropdown("Whitelist Player", "Pick a player to whitelist", getAllPlayerNames(), function(currentOption)
+	whitelistPlayer(currentOption, true)
+end)
+game:GetService("Players").PlayerAdded:Connect(function()
+	whitelistDropdown:Refresh(getAllPlayerNames())
+end)
+game:GetService("Players").PlayerRemoving:Connect(function()
+	whitelistDropdown:Refresh(getAllPlayerNames())
+end)
+
+AimlockWhitelistSection:NewButton("Check Whitelisted Players", "Notifies you of all players whitelisted", function()
+	if #whitelisted > 0 then
+		notify("Whitelisted Players:", tableToString(whitelisted), 15, "CLOSE")
+	else
+		notify("No Whitelisted Players", "You haven't whitelisted anyone yet.", 3)
+	end
+end)
+
+AimlockWhitelistSection:NewButton("Clear Whitelist", "Removes all players from whitelist", function()
+	whitelisted = {}
+	notify("Whitelist Cleared", "All players have been removed from aimlock whitelist.", 3, "Okay.")
+end)
+
+AimlockWhitelistSection:NewButton("Whitelist All Friends", "Whitelists all friends in the server", function()
+	local friends = getFriendsInServer(LocalPlayer)
+	for _, friend in ipairs(friends) do
+		table.insert(whitelisted, friend.Name)
+	end
+
+	if #friends > 0 then
+		notify("Whitelisted Friends:", joinInstanceNames(friends), 10, "Okay.")
+	else
+		notify("No Friends in Server", "You have no friends currently in your server", 3)
+	end
+end)
+
+local teamWhitelistDropdown = TeamAimlockWhitelistSection:NewDropdown("Whitelist Team", "Allows you to whitelist an entire team", getTeams(), function(currentOption)
+	local matchingTeam = game:GetService("Teams"):FindFirstChild(currentOption)
+	
+	whitelistTeam(matchingTeam)
+end)
+game:GetService("Teams").ChildAdded:Connect(function()
+	teamWhitelistDropdown:Refresh(getTeams())
+end)
+game:GetService("Teams").ChildRemoved:Connect(function()
+	teamWhitelistDropdown:Refresh(getTeams())
+end)
+
+TeamAimlockWhitelistSection:NewButton("Clear Team Whitelist", "Removes all teams from whitelist", function()
+	whitelistedTeams = {}
+	notify("Whitelist Cleared", "All teams have been removed from aimlock whitelist.", 3, "Okay.")
+end)
+
+-- aimlock subsection end
+
+
+for theme, color in pairs(colors) do
+	ColourSettingsSection:NewColorPicker(theme, "Change your "..theme, color, function(color3)
+		Library:ChangeColor(theme, color3)
+	end)
+end
